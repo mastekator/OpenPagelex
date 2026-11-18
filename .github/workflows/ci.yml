@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # A secret, not a variable: step env is printed in public logs and only secrets are masked.
+      - run: sh scripts/check-forbidden-words.sh
+        env:
+          FORBIDDEN_WORDS: ${{ secrets.FORBIDDEN_WORDS }}
+      - run: sh scripts/check-forbidden-files.sh
+      # The Flutter steps start once the app scaffold (pubspec.yaml) lands.
+      - id: app
+        run: if [ -f pubspec.yaml ]; then echo "present=true" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.app.outputs.present == 'true'
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - if: steps.app.outputs.present == 'true'
+        run: flutter pub get
+      - if: steps.app.outputs.present == 'true'
+        run: dart format --output=none --set-exit-if-changed .
+      - if: steps.app.outputs.present == 'true'
+        run: flutter analyze
+      - if: steps.app.outputs.present == 'true'
+        run: flutter test
